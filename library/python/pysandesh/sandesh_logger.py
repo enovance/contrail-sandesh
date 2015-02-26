@@ -6,17 +6,17 @@
 # Sandesh Logger
 #
 
+from cfgm_common import importutils
+
 import logging
 import logging.handlers
 from gen_py.sandesh.ttypes import SandeshLevel
 
-class SandeshLogger(object):
 
-    """Sandesh Logger Implementation."""
+class SandeshBaseLogger(object):
+    """Sandesh Base Logger"""
 
     _logger = None
-    _DEFAULT_LOG_FILE = '<stdout>'
-    _DEFAULT_SYSLOG_FACILITY = 'LOG_LOCAL0'
 
     _SANDESH_LEVEL_TO_LOGGER_LEVEL = {
         SandeshLevel.SYS_EMERG : logging.CRITICAL,
@@ -28,8 +28,57 @@ class SandeshLogger(object):
         SandeshLevel.SYS_INFO : logging.INFO,
         SandeshLevel.SYS_DEBUG : logging.DEBUG
     }
+    
+    def __init__(self, generator, logger_config_file=None):
+        pass
+    
+    @staticmethod
+    def create_logger(generator, logger_class=None,
+                      logger_config_file=None):
+        if logger_class and logger_config_file:
+            try:
+                l_class = importutils.import_class(logger_class)
+                return l_class(generator,
+                               logger_config_file=logger_config_file)
+            except Exception:
+                # if there is any exception use the default SandeshLogger
+                pass
 
-    def __init__(self, generator):
+        return SandeshLogger(generator, logger_config_file=logger_config_file)
+        
+    @staticmethod
+    def get_py_logger_level(sandesh_level):
+        return SandeshLogger._SANDESH_LEVEL_TO_LOGGER_LEVEL[sandesh_level]
+    #end get_py_logger_level
+
+    def logger(self):
+        return self._logger
+
+    def set_logging_params(self, **kwargs):
+        pass
+
+
+class SandeshConfigLogger(SandeshBaseLogger):
+
+    " Sandesh Config Logger Implementation"
+
+    def __init__(self, generator, logger_config_file=None):
+        self._generator = generator
+        self._logger_config_file = logger_config_file
+        if not self._logger_config_file:
+            return
+        
+        logging.config.fileConfig(logger_config_file)
+        self._logger = logging.getLogger(self._generator)
+        
+
+class SandeshLogger(SandeshBaseLogger):
+
+    """Sandesh Logger Implementation."""
+    _DEFAULT_LOG_FILE = '<stdout>'
+    _DEFAULT_SYSLOG_FACILITY = 'LOG_LOCAL0'
+    
+    def __init__(self, generator, logger_config_file=None):
         assert generator, 'SandeshLogger init requires generator name'
 
         self._generator = generator
@@ -38,9 +87,14 @@ class SandeshLogger(object):
         self._logging_category = ''
         self._logging_file = self._DEFAULT_LOG_FILE
         self._logging_syslog_facility = self._DEFAULT_SYSLOG_FACILITY
-        self._logger = logging.getLogger(self._generator)
         self._logging_level = SandeshLevel.SYS_INFO
-        self._logger.setLevel(SandeshLogger.get_py_logger_level(self._logging_level))
+
+        if logger_config_file:
+            logging.config.fileConfig(logger_config_file)
+
+        self._logger = logging.getLogger(self._generator)
+        self._logger.setLevel(SandeshBaseLogger.get_py_logger_level(
+                self._logging_level))
         if not len(self._logger.handlers):
             # add the handler only once
             self._logging_file_handler = logging.StreamHandler()
@@ -50,16 +104,8 @@ class SandeshLogger(object):
             self._logger.addHandler(self._logging_file_handler)
         else:
             self._logging_file_handler = self._logger.handlers[0]
+            
     #end __init__
-
-    @staticmethod
-    def get_py_logger_level(sandesh_level):
-        return SandeshLogger._SANDESH_LEVEL_TO_LOGGER_LEVEL[sandesh_level]
-    #end get_py_logger_level
-
-    def logger(self):
-        return self._logger
-    #end logger
 
     def set_logging_params(self, enable_local_log=False, category='', level=SandeshLevel.SYS_INFO,
                            file=_DEFAULT_LOG_FILE, enable_syslog=False, syslog_facility='LOG_LOCAL0'):
